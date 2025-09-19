@@ -60,8 +60,15 @@ class PretrainDataModule(pl.LightningDataModule):
         assert stage in ['fit', 'test'], "stage must be either fit or test"
 
         try:
-            self.world_size = dist.get_world_size()
-            self.rank = dist.get_rank()
+            if dist.is_available() and dist.is_initialized():
+                self.world_size = dist.get_world_size()
+                self.rank = dist.get_rank()
+            else:
+                self.world_size = 1  # 单机单卡情况
+                self.rank = 0
+                print("==================")
+            # self.world_size = dist.get_world_size()
+            
             logger.info(f"[rank:{self.rank}] world_size: {self.world_size}")
         except AssertionError as ae:
             self.world_size = 1
@@ -109,7 +116,10 @@ class PretrainDataModule(pl.LightningDataModule):
 
     def train_dataloader(self):
         """ Build training dataloader for KAIST dataset. """
-        sampler = DistributedSampler(self.train_dataset, shuffle=True)
+        sampler = None
+        if self.world_size > 1:
+            sampler = DistributedSampler(self.train_dataset, shuffle=True)
+
         dataloader = DataLoader(self.train_dataset, sampler=sampler, **self.train_loader_params)
         return dataloader
     
@@ -120,6 +130,9 @@ class PretrainDataModule(pl.LightningDataModule):
         else:
             dataloaders = []
             for dataset in self.val_dataset:
-                sampler = DistributedSampler(dataset, shuffle=False)
+                sampler = None
+                if self.world_size > 1:
+                    sampler = DistributedSampler(dataset, shuffle=False)
+
                 dataloaders.append(DataLoader(dataset, sampler=sampler, **self.val_loader_params))
             return dataloaders

@@ -11,7 +11,7 @@ data_cfg_path="configs/data/pretrain.py"
 main_cfg_path="configs/xoftr/pretrain/pretrain.py"
 
 n_nodes=1
-n_gpus_per_node=2
+n_gpus_per_node=1
 torch_num_workers=16
 batch_size=2
 pin_memory=true

@@ -98,13 +98,13 @@ class XoFTR_Pretrain(nn.Module):
                      "masked_image1":image1.clone().detach().cpu()})
 
         if data['hw0_i'] == data['hw1_i']:  # faster & better BN convergence
-            feats_c, feats_m, feats_f = self.backbone(torch.cat([image0, image1], dim=0))
+            feats_c, feats_m, feats_f, _ = self.backbone(torch.cat([image0, image1], dim=0))
             (feat_c0, feat_c1) = feats_c.split(data['bs'])
             (feat_m0, feat_m1) = feats_m.split(data['bs'])
             (feat_f0, feat_f1) = feats_f.split(data['bs'])
         else:  # handle different input shapes
-            feat_c0, feat_m0, feat_f0 = self.backbone(image0)
-            feat_c1, feat_m1, feat_f1 = self.backbone(image1)
+            feat_c0, feat_m0, feat_f0, _ = self.backbone(image0)
+            feat_c1, feat_m1, feat_f1, _ = self.backbone(image1)
         
         # mask output layers of backbone and replace with trainable token
         feat_c0 = self.mask_layer(feat_c0,

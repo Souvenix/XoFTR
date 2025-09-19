@@ -20,10 +20,18 @@ def load_xoftr(args):
     from src.xoftr import XoFTR
     from src.config.default import get_cfg_defaults
     from src.utils.data_io import DataIOWrapper, lower_config
+    # 不再使用 inference=True，以确保能加载完整配置
     config = get_cfg_defaults(inference=True)
     config = lower_config(config)
     config["xoftr"]["match_coarse"]["thr"] = args.match_threshold
     config["xoftr"]["fine"]["thr"] = args.fine_threshold
+    
+    # 如果使用线特征，需要添加相应配置
+    if hasattr(args, 'use_line_feature') and args.use_line_feature:
+        # 添加完整的线特征配置
+        config["xoftr"]["line_feature"] = {}
+        config["xoftr"]["line_feature"]["use_line_feature"] = True
+        # 确保线特征相关的权重已经加载或正确初始化
     ckpt = args.ckpt
     matcher = XoFTR(config=config["xoftr"])
     matcher = DataIOWrapper(matcher, config=config["test"], ckpt=ckpt)
@@ -78,9 +86,11 @@ def save_matching_figure(path, img0, img1, mkpts0, mkpts1, inlier_mask, T_0to1, 
     """
     Tx = np.cross(np.eye(3), T_0to1[:3, 3])
     E_mat = Tx @ T_0to1[:3, :3]
-    mkpts0_inliers = mkpts0[inlier_mask]
-    mkpts1_inliers = mkpts1[inlier_mask] 
+    
     if inlier_mask is not None and len(inlier_mask) != 0:
+        mkpts0_inliers = mkpts0[inlier_mask]
+        mkpts1_inliers = mkpts1[inlier_mask] 
+        
         epi_errs = symmetric_epipolar_distance_numpy(mkpts0_inliers, mkpts1_inliers, E_mat, K0, K1)
 
         correct_mask = epi_errs < conf_thr
@@ -95,6 +105,11 @@ def save_matching_figure(path, img0, img1, mkpts0, mkpts1, inlier_mask, T_0to1, 
     else:
         text_precision =[
         f'No inliers after ransac']
+        # 添加默认的color变量定义
+        color = None
+        # 修复：当没有内点时，使用空数组或原始点集
+        mkpts0_inliers = np.array([]) if mkpts0 is None else mkpts0[0:0]  # 空数组，保持形状兼容
+        mkpts1_inliers = np.array([]) if mkpts1 is None else mkpts1[0:0]
 
     if name is not None:
         text=[name]
@@ -289,7 +304,7 @@ if __name__ == '__main__':
     def add_common_arguments(parser):
         parser.add_argument('--gpu', '-gpu', type=str, default='0')
         parser.add_argument('--exp_name', type=str, default="VisTIR")
-        parser.add_argument('--data_root_dir', type=str, default="./data/METU_VisTIR/")
+        parser.add_argument('--data_root_dir', type=str, default="C:/Users/lhk/Desktop/Ex/XoFTR/data/METU_VisTIR/")
         parser.add_argument('--save_dir', type=str, default="./results_relative_pose")
         parser.add_argument('--ransac_thres', type=float, default=1.5)
         parser.add_argument('--print_out', action='store_true')
@@ -301,6 +316,9 @@ if __name__ == '__main__':
         subcommand.add_argument('--match_threshold', type=float, default=0.3)
         subcommand.add_argument('--fine_threshold', type=float, default=0.1)
         subcommand.add_argument('--ckpt', type=str, default="./weights/weights_xoftr_640.ckpt")
+        # 添加新的命令行参数以支持线特征
+        subcommand.add_argument('--use_line_feature', action='store_true', 
+                               help='Enable line feature processing in the model', default=False)
         add_common_arguments(subcommand)
 
     parser = argparse.ArgumentParser(description='Benchmark Relative Pose')
@@ -309,7 +327,7 @@ if __name__ == '__main__':
     # Create subparsers for top-level commands
     subparsers = parser.add_subparsers(dest="method")
     add_xoftr_arguments(subparsers)
-    
+
     args = parser.parse_args()
 
     os.environ['CUDA_VISIBLE_DEVICES'] = "0"

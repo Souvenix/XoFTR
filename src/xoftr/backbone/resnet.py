@@ -1,5 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
+import torch
+from .line_feature_extractor import LineFeatureExtractor
 
 
 def conv1x1(in_planes, out_planes, stride=1):
@@ -66,6 +68,11 @@ class ResNet_8_2(nn.Module):
 
         self.layer3_outconv = conv1x1(block_dims[2], block_dims[2])
         
+        # 添加线特征提取器
+        self.line_extractor = LineFeatureExtractor(config)
+        
+        # 特征融合模块
+        self.feature_fusion = nn.Conv2d(initial_dim * 2, initial_dim, kernel_size=1, stride=1, padding=0, bias=False)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -83,7 +90,27 @@ class ResNet_8_2(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        # ResNet Backbone
+        # # ResNet Backbone
+        # x0 = self.relu(self.bn1(self.conv1(x)))
+        
+        # # 提取线特征并融合
+        # line_feats, edges = self.line_extractor(x)
+        # # 调整线特征分辨率以匹配x0
+        # line_feats = F.interpolate(line_feats, size=x0.shape[2:], mode='bilinear', align_corners=False)
+        # # 融合原始特征和线特征
+        # x0_fused = self.feature_fusion(torch.cat([x0, line_feats], dim=1))
+        
+        # # 继续处理融合后的特征
+        # x1 = self.layer1(x0_fused)  # 1/2
+        # x2 = self.layer2(x1)  # 1/4
+        # x3 = self.layer3(x2)  # 1/8
+
+        # x3_out = self.layer3_outconv(x3)
+
+        # # 返回3个特征图，去掉edges返回值
+        # return x3_out, x2, x1, edges
+
+                # ResNet Backbone
         x0 = self.relu(self.bn1(self.conv1(x)))
         x1 = self.layer1(x0)  # 1/2
         x2 = self.layer2(x1)  # 1/4
@@ -91,5 +118,5 @@ class ResNet_8_2(nn.Module):
 
         x3_out = self.layer3_outconv(x3)
 
-        return x3_out, x2, x1
+        return x3_out, x2, x1, None
 

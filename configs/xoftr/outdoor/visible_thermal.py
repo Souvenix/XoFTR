@@ -15,3 +15,6 @@ cfg.TRAINER.ADAMW_DECAY = 0.1
 cfg.XOFTR.MATCH_COARSE.TRAIN_COARSE_PERCENT = 0.3
 
 cfg.TRAINER.USE_WANDB = True # use weight and biases
+
+# 添加到配置文件末尾
+cfg['pretrained_weights'] = 'path/to/weights_xoftr_640.ckpt'  # 使用您现有的权重文件路径

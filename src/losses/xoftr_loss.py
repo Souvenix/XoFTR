@@ -13,6 +13,8 @@ class XoFTRLoss(nn.Module):
         self.pos_w = self.loss_config['pos_weight']
         self.neg_w = self.loss_config['neg_weight']
 
+        # 添加线特征损失权重
+        self.line_feature_loss_weight = config.get('line_feature_loss_weight', 0.1)
 
     def compute_fine_matching_loss(self, data):
         """ Point-wise Focal Loss with 0 / 1 confidence as gt.
@@ -164,6 +166,59 @@ class XoFTRLoss(nn.Module):
         loss_sub *= self.loss_config['sub_weight'] 
         loss = loss + loss_sub 
         loss_scalars.update({"loss_sub":  loss_sub.clone().detach().cpu()})
+
+        # 添加线特征一致性损失
+        line_feature_loss = 0
+        if self.line_feature_loss_weight > 0 and 'edge0' in data and 'edge1' in data and 'mkpts0_f' in data and 'mkpts1_f' in data:
+            edge0 = data['edge0']  # [B, 1, H, W]
+            edge1 = data['edge1']  # [B, 1, H, W]
+            mkpts0_f = data['mkpts0_f']  # [N, 2]
+            mkpts1_f = data['mkpts1_f']  # [N, 2]
+            
+            # 确保边缘图和点坐标在同一设备上
+            device = edge0.device
+            mkpts0_f = mkpts0_f.to(device)
+            mkpts1_f = mkpts1_f.to(device)
+            
+            # 获取图像尺寸
+            _, _, H, W = edge0.shape
+            
+            # 将点坐标从归一化坐标转换为像素坐标
+            mkpts0_pix = torch.zeros_like(mkpts0_f)
+            mkpts0_pix[:, 0] = (mkpts0_f[:, 0] + 1) * W / 2
+            mkpts0_pix[:, 1] = (mkpts0_f[:, 1] + 1) * H / 2
+            
+            mkpts1_pix = torch.zeros_like(mkpts1_f)
+            mkpts1_pix[:, 0] = (mkpts1_f[:, 0] + 1) * W / 2
+            mkpts1_pix[:, 1] = (mkpts1_f[:, 1] + 1) * H / 2
+            
+            # 确保点坐标在图像范围内
+            valid0 = (mkpts0_pix[:, 0] >= 0) & (mkpts0_pix[:, 0] < W) & \
+                     (mkpts0_pix[:, 1] >= 0) & (mkpts0_pix[:, 1] < H)
+            valid1 = (mkpts1_pix[:, 0] >= 0) & (mkpts1_pix[:, 0] < W) & \
+                     (mkpts1_pix[:, 1] >= 0) & (mkpts1_pix[:, 1] < H)
+            valid = valid0 & valid1
+            
+            if valid.any():
+                # 使用grid_sample从边缘图中采样点的值
+                grid0 = torch.zeros((valid.sum(), 1, 1, 2), device=device)
+                grid0[:, 0, 0, 0] = (mkpts0_pix[valid, 0] / (W - 1)) * 2 - 1  # 归一化到[-1, 1]
+                grid0[:, 0, 0, 1] = (mkpts0_pix[valid, 1] / (H - 1)) * 2 - 1
+                
+                grid1 = torch.zeros((valid.sum(), 1, 1, 2), device=device)
+                grid1[:, 0, 0, 0] = (mkpts1_pix[valid, 0] / (W - 1)) * 2 - 1
+                grid1[:, 0, 0, 1] = (mkpts1_pix[valid, 1] / (H - 1)) * 2 - 1
+                
+                # 从边缘图中采样
+                edge_value0 = F.grid_sample(edge0, grid0, align_corners=False).squeeze()
+                edge_value1 = F.grid_sample(edge1, grid1, align_corners=False).squeeze()
+                
+                # 计算线特征一致性损失 - 鼓励匹配点位于边缘上
+                line_feature_loss = 1.0 - (edge_value0 + edge_value1).mean() / 2.0
+                
+                line_feature_loss *= self.loss_config['line_weight'] 
+                loss += line_feature_loss
+                loss_scalars.update({"loss_line": line_feature_loss.clone().detach().cpu()})
         
 
         loss_scalars.update({'loss': loss.clone().detach().cpu()})

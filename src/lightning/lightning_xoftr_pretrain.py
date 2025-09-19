@@ -45,6 +45,27 @@ class PL_XoFTR_Pretrain(pl.LightningModule):
             state_dict = torch.load(pretrained_ckpt, map_location='cpu')['state_dict']
             self.matcher.load_state_dict(state_dict, strict=False)
             logger.info(f"Load \'{pretrained_ckpt}\' as pretrained checkpoint")
+
+            # 冻结预训练模型中已存在的参数，只训练新添加的参数
+            # 1. 首先将所有参数设置为requires_grad=False
+            for param in self.matcher.parameters():
+                param.requires_grad = False
+            
+            # 2. 然后检查哪些参数在预训练权重中存在
+            #    对于不在预训练权重中的参数（新添加的），设置requires_grad=True并进行初始化
+            for name, param in self.matcher.named_parameters():
+                # 检查参数名是否在预训练权重中存在
+                if name not in state_dict:
+                    # 新添加的参数，设置为可训练
+                    param.requires_grad = True
+                    # 进行Xavier初始化（如果是权重参数）
+                    if 'weight' in name:
+                        nn.init.xavier_normal_(param)
+                    elif 'bias' in name:
+                        nn.init.zeros_(param)
+                    logger.info(f"New parameter {name} will be trained from scratch")
+                else:
+                    logger.info(f"Parameter {name} is frozen and using pretrained value")
         
         # Testing
         self.dump_dir = dump_dir
@@ -145,7 +166,7 @@ class PL_XoFTR_Pretrain(pl.LightningModule):
         for valset_idx, outputs in enumerate(multi_outputs):
             # since pl performs sanity_check at the very begining of the training
             cur_epoch = self.trainer.current_epoch
-            if not self.trainer.resume_from_checkpoint and self.trainer.running_sanity_check:
+            if not self.trainer.resume_from_checkpoint and self.trainer._run_sanity_check:
                 cur_epoch = -1
 
             # 1. loss_scalars: dict of list, on cpu

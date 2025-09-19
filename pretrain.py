@@ -3,6 +3,7 @@ import argparse
 import pprint
 from distutils.util import strtobool
 from pathlib import Path
+from PIL.Image import _plugins
 from loguru import logger as loguru_logger
 from datetime import datetime
 
@@ -105,9 +106,9 @@ def main():
     # Lightning Trainer
     trainer = pl.Trainer.from_argparse_args(
         args,
-        plugins=DDPPlugin(find_unused_parameters=True,
-                          num_nodes=args.num_nodes,
-                          sync_batchnorm=config.TRAINER.WORLD_SIZE > 0),
+        # plugins=DDPPlugin(find_unused_parameters=True,
+        #                   num_nodes=args.num_nodes,
+        #                   sync_batchnorm=config.TRAINER.WORLD_SIZE > 0),
         gradient_clip_val=config.TRAINER.GRADIENT_CLIPPING,
         callbacks=callbacks,
         logger=logger,

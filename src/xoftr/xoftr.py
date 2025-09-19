@@ -4,7 +4,10 @@ from einops.einops import rearrange
 from .backbone import ResNet_8_2
 from .utils.position_encoding import PositionEncodingSine
 from .xoftr_module import LocalFeatureTransformer, FineProcess, CoarseMatching, FineSubMatching
+# 在导入部分添加
+from .xoftr_module import FineProcessWithLine
 
+# 在__init__方法中修改
 class XoFTR(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -16,9 +19,15 @@ class XoFTR(nn.Module):
         self.pos_encoding = PositionEncodingSine(config['coarse']['d_model'])
         self.loftr_coarse = LocalFeatureTransformer(config['coarse'])
         self.coarse_matching = CoarseMatching(config['match_coarse'])
-        self.fine_process = FineProcess(config)
-        self.fine_matching= FineSubMatching(config)
-
+        
+        # 根据配置决定使用哪个FineProcess模块
+        if config.get('line_feature', {}).get('use_line_feature', False):
+            print("使用线特征")
+            self.fine_process = FineProcessWithLine(config)
+        else:
+            self.fine_process = FineProcess(config)
+            
+        self.fine_matching = FineSubMatching(config)
 
     def forward(self, data):
         """ 
@@ -47,13 +56,21 @@ class XoFTR(nn.Module):
         image1 = (data['image1'] - image1_mean) / (image1_std + eps)
 
         if data['hw0_i'] == data['hw1_i']:  # faster & better BN convergence
-            feats_c, feats_m, feats_f = self.backbone(torch.cat([image0, image1], dim=0))
+            # 修改这里以接收边缘特征
+            feats_c, feats_m, feats_f, edges = self.backbone(torch.cat([image0, image1], dim=0))
             (feat_c0, feat_c1) = feats_c.split(data['bs'])
             (feat_m0, feat_m1) = feats_m.split(data['bs'])
             (feat_f0, feat_f1) = feats_f.split(data['bs'])
+            (edge0, edge1) = edges.split(data['bs'])
         else:  # handle different input shapes
-            feat_c0, feat_m0, feat_f0 = self.backbone(image0)
-            feat_c1, feat_m1, feat_f1 = self.backbone(image1)
+            feat_c0, feat_m0, feat_f0, edge0 = self.backbone(image0)
+            feat_c1, feat_m1, feat_f1, edge1 = self.backbone(image1)
+
+        # 保存边缘特征
+        data.update({
+            'edge0': edge0,
+            'edge1': edge1
+        })
 
         data.update({
             'hw0_c': feat_c0.shape[2:], 'hw1_c': feat_c1.shape[2:],
@@ -77,7 +94,7 @@ class XoFTR(nn.Module):
         # 3. match coarse-level
         self.coarse_matching(feat_c0, feat_c1, data, mask_c0=mask_c0, mask_c1=mask_c1)
 
-        # 4. fine-level matching module       
+        # 4. fine-level matching module        
         feat_f0_unfold, feat_f1_unfold = self.fine_process(feat_f0, feat_f1,
                                                            feat_m0, feat_m1,
                                                            feat_c0, feat_c1,
@@ -87,8 +104,10 @@ class XoFTR(nn.Module):
         # 5. match fine-level and sub-pixel refinement
         self.fine_matching(feat_f0_unfold, feat_f1_unfold, data)
 
+    # 这个方法已经存在，但需要确保其逻辑正确
     def load_state_dict(self, state_dict, *args, **kwargs):
         for k in list(state_dict.keys()):
             if k.startswith('matcher.'):
                 state_dict[k.replace('matcher.', '', 1)] = state_dict.pop(k)
-        return super().load_state_dict(state_dict, *args, **kwargs)
+        # 使用 strict=False 允许加载不匹配的参数
+        return super().load_state_dict(state_dict, strict=False)

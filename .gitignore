@@ -1,0 +1,6 @@
+data
+assets
+__pycache__
+wandb
+.idea
+result*/

@@ -60,13 +60,14 @@ _CN.XOFTR.LOSS.COARSE_WEIGHT = 0.5
 _CN.XOFTR.LOSS.FINE_WEIGHT = 0.3
 # -- # sub-pixel
 _CN.XOFTR.LOSS.SUB_WEIGHT = 1 * 10**4
+_CN.XOFTR.LOSS.LINE_WEIGHT = 0.2
 
 ##############  Dataset  ##############
 _CN.DATASET = CN()
 # 1. data config
 # training and validating
 _CN.DATASET.TRAIN_DATA_SOURCE = None  # options: ['ScanNet', 'MegaDepth']
-_CN.DATASET.TRAIN_DATA_ROOT = None
+_CN.DATASET.TRAIN_DATA_ROOT = "C:/Users/lhk/Desktop/Ex/XoFTR/data/kaist-cvpr15"
 _CN.DATASET.TRAIN_POSE_ROOT = None  # (optional directory for poses)
 _CN.DATASET.TRAIN_NPZ_ROOT = None
 _CN.DATASET.TRAIN_LIST_PATH = None
@@ -200,4 +201,9 @@ def get_cfg_defaults(inference=False):
         _CN.XOFTR.COARSE.INFERENCE = True
         _CN.XOFTR.MATCH_COARSE.INFERENCE = True
         _CN.XOFTR.FINE.INFERENCE = True
+    # 在XOFTR配置部分添加线特征相关配置
+    _CN.XOFTR.LINE_FEATURE = CN()
+    _CN.XOFTR.LINE_FEATURE.USE_LINE_FEATURE = False  # 是否使用线特征
+    _CN.XOFTR.LINE_FEATURE.WEIGHT = 0.5  # 线特征在融合中的权重
+    _CN.XOFTR.LINE_FEATURE.EDGE_THRESHOLD = 0.5  # 边缘检测的阈值
     return _CN.clone()
