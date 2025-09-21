@@ -5,6 +5,7 @@ import torch.nn.functional as F
 class XoFTRLossPretrain(nn.Module):
     def __init__(self, config):
         super().__init__()
+        print("use XoFTRLossPretrain")
         self.config = config  # config under the global namespace
         self.W_f = config["xoftr"]['fine_window_size']
     

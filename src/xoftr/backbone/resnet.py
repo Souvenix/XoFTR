@@ -90,7 +90,7 @@ class ResNet_8_2(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        # # ResNet Backbone
+        # # # ResNet Backbone
         # x0 = self.relu(self.bn1(self.conv1(x)))
         
         # # 提取线特征并融合
@@ -110,7 +110,7 @@ class ResNet_8_2(nn.Module):
         # # 返回3个特征图，去掉edges返回值
         # return x3_out, x2, x1, edges
 
-                # ResNet Backbone
+        # ResNet Backbone
         x0 = self.relu(self.bn1(self.conv1(x)))
         x1 = self.layer1(x0)  # 1/2
         x2 = self.layer2(x1)  # 1/4

@@ -37,6 +37,7 @@ python -u ./pretrain.py ^
     --limit_val_batches=1.0 ^
     --num_sanity_val_steps=10 ^
     --benchmark=True ^
-    --max_epochs=15
+    --max_epochs=15 ^
+    --ckpt_path weights/weights_xoftr_640.ckpt
 
 ENDLOCAL

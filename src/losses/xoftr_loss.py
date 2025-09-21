@@ -8,6 +8,7 @@ from kornia.geometry.epipolar import numeric
 class XoFTRLoss(nn.Module):
     def __init__(self, config):
         super().__init__()
+        print("use XoFTRLoss")
         self.config = config  # config under the global namespace
         self.loss_config = config['xoftr']['loss']
         self.pos_w = self.loss_config['pos_weight']

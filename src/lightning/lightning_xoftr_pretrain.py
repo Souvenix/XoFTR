@@ -3,6 +3,7 @@ from loguru import logger
 
 import torch
 import pytorch_lightning as pl
+import torch.nn as nn
 from matplotlib import pyplot as plt
 plt.switch_backend('agg')
 
@@ -41,6 +42,7 @@ class PL_XoFTR_Pretrain(pl.LightningModule):
         self.loss = XoFTRLossPretrain(_config)
 
         # Pretrained weights
+        print(f"====================pretrained_ckpt: {pretrained_ckpt}")
         if pretrained_ckpt:
             state_dict = torch.load(pretrained_ckpt, map_location='cpu')['state_dict']
             self.matcher.load_state_dict(state_dict, strict=False)
@@ -58,9 +60,14 @@ class PL_XoFTR_Pretrain(pl.LightningModule):
                 if name not in state_dict:
                     # 新添加的参数，设置为可训练
                     param.requires_grad = True
-                    # 进行Xavier初始化（如果是权重参数）
+                    # 进行初始化（根据参数维度选择合适的初始化方法）
                     if 'weight' in name:
-                        nn.init.xavier_normal_(param)
+                        # 检查张量维度，只有维度≥2时才使用Xavier初始化
+                        if param.dim() >= 2:
+                            nn.init.xavier_normal_(param)
+                        else:
+                            # 对于维度<2的权重参数，使用正态分布初始化
+                            nn.init.normal_(param, mean=0.0, std=0.01)
                     elif 'bias' in name:
                         nn.init.zeros_(param)
                     logger.info(f"New parameter {name} will be trained from scratch")
