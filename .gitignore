@@ -4,4 +4,6 @@ __pycache__
 wandb
 .idea
 result*/
-weights
+weights/
+__pycache__/
+*.pyc

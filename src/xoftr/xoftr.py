@@ -4,6 +4,7 @@ from einops.einops import rearrange
 from .backbone import ResNet_8_2
 from .utils.position_encoding import PositionEncodingSine
 from .xoftr_module import LocalFeatureTransformer, FineProcess, CoarseMatching, FineSubMatching
+from .utils.line_feature import LineFeatureExtractor  # 导入线特征提取器
 
 class XoFTR(nn.Module):
     def __init__(self, config):
@@ -17,7 +18,8 @@ class XoFTR(nn.Module):
         self.loftr_coarse = LocalFeatureTransformer(config['coarse'])
         self.coarse_matching = CoarseMatching(config['match_coarse'])
         self.fine_process = FineProcess(config)
-        self.fine_matching= FineSubMatching(config)
+        self.fine_matching = FineSubMatching(config)
+        self.line_feature_extractor = LineFeatureExtractor(config)  # 添加线特征提取器
 
 
     def forward(self, data):
@@ -46,6 +48,10 @@ class XoFTR(nn.Module):
         image1_std = data['image1'].std(dim=[2,3], keepdim=True)
         image1 = (data['image1'] - image1_mean) / (image1_std + eps)
 
+        # 提取线特征
+        line_feat0 = self.line_feature_extractor(data['image0'])
+        line_feat1 = self.line_feature_extractor(data['image1'])
+
         if data['hw0_i'] == data['hw1_i']:  # faster & better BN convergence
             feats_c, feats_m, feats_f = self.backbone(torch.cat([image0, image1], dim=0))
             (feat_c0, feat_c1) = feats_c.split(data['bs'])
@@ -54,6 +60,10 @@ class XoFTR(nn.Module):
         else:  # handle different input shapes
             feat_c0, feat_m0, feat_f0 = self.backbone(image0)
             feat_c1, feat_m1, feat_f1 = self.backbone(image1)
+
+        # 融合线特征和图像特征
+        feat_f0 = self.line_feature_extractor.fuse_features(feat_f0, line_feat0)
+        feat_f1 = self.line_feature_extractor.fuse_features(feat_f1, line_feat1)
 
         data.update({
             'hw0_c': feat_c0.shape[2:], 'hw1_c': feat_c1.shape[2:],
@@ -91,4 +101,5 @@ class XoFTR(nn.Module):
         for k in list(state_dict.keys()):
             if k.startswith('matcher.'):
                 state_dict[k.replace('matcher.', '', 1)] = state_dict.pop(k)
-        return super().load_state_dict(state_dict, *args, **kwargs)
+        # 设置strict=False以忽略新增的线特征模块参数
+        return super().load_state_dict(state_dict, strict=False, *args, **kwargs)
