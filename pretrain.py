@@ -105,10 +105,9 @@ def main():
     # Lightning Trainer
     trainer = pl.Trainer.from_argparse_args(
         args,
-        plugins=DDPPlugin(find_unused_parameters=True,
-                          num_nodes=args.num_nodes,
-                          sync_batchnorm=config.TRAINER.WORLD_SIZE > 0),
-        gradient_clip_val=config.TRAINER.GRADIENT_CLIPPING,
+        # plugins=DDPPlugin(find_unused_parameters=True,
+        #                   num_nodes=args.num_nodes,
+        #                   sync_batchnorm=config.TRAINER.WORLD_SIZE > 0),
         callbacks=callbacks,
         logger=logger,
         sync_batchnorm=config.TRAINER.WORLD_SIZE > 0,

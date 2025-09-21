@@ -145,7 +145,7 @@ class PL_XoFTR_Pretrain(pl.LightningModule):
         for valset_idx, outputs in enumerate(multi_outputs):
             # since pl performs sanity_check at the very begining of the training
             cur_epoch = self.trainer.current_epoch
-            if not self.trainer.resume_from_checkpoint and self.trainer.running_sanity_check:
+            if not self.trainer.resume_from_checkpoint and self.trainer._run_sanity_check:
                 cur_epoch = -1
 
             # 1. loss_scalars: dict of list, on cpu
