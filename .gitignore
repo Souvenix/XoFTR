@@ -4,3 +4,5 @@ __pycache__
 wandb
 .idea
 result*/
+src/config/__pycache__/
+src/xoftr/backbone/__pycache__/
