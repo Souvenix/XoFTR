@@ -52,6 +52,18 @@ class XoFTR(nn.Module):
         line_feat0 = self.line_feature_extractor(data['image0'])
         line_feat1 = self.line_feature_extractor(data['image1'])
 
+        if True:
+            self.line_feature_extractor.visualize_and_save_lines(
+                data['image0'], 
+                save_dir='./output_lines/image0', 
+                file_prefix='image0_lines'
+            )
+            self.line_feature_extractor.visualize_and_save_lines(
+                data['image1'], 
+                save_dir='./output_lines/image1', 
+                file_prefix='image1_lines'
+            )
+
         if data['hw0_i'] == data['hw1_i']:  # faster & better BN convergence
             feats_c, feats_m, feats_f = self.backbone(torch.cat([image0, image1], dim=0))
             (feat_c0, feat_c1) = feats_c.split(data['bs'])
