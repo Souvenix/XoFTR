@@ -4,6 +4,7 @@ from einops.einops import rearrange
 from .backbone import ResNet_8_2
 from .utils.position_encoding import PositionEncodingSine
 from .xoftr_module import LocalFeatureTransformer, FineProcess
+from .xoftr_module.tsca import TSCAModule
 
 
 class XoFTR_Pretrain(nn.Module):
@@ -12,11 +13,19 @@ class XoFTR_Pretrain(nn.Module):
         # Misc
         self.config = config
         self.patch_size = config["pretrain_patch_size"]
+        
+        # TSCA配置
+        self.use_tsca = config.get('tsca', {}).get('enabled', False)
 
         # Modules
         self.backbone = ResNet_8_2(config['resnet'])
         self.pos_encoding = PositionEncodingSine(config['coarse']['d_model'])
         self.loftr_coarse = LocalFeatureTransformer(config['coarse'])
+        
+        # TSCA模块
+        if self.use_tsca:
+            self.tsca_module = TSCAModule(config['tsca'])
+        
         self.fine_process = FineProcess(config)
         self.mask_token_f = nn.Parameter(torch.zeros(1, config['resnet']["block_dims"][0], 1, 1))
         self.mask_token_m = nn.Parameter(torch.zeros(1, config['resnet']["block_dims"][1], 1, 1))
@@ -160,6 +169,15 @@ class XoFTR_Pretrain(nn.Module):
         mask_c0 = mask_c1 = None  # mask is useful in training
         if 'mask0' in data:
             mask_c0, mask_c1 = data['mask0'].flatten(-2), data['mask1'].flatten(-2)
+        
+        # TSCA模块：在粗匹配前应用纹理语义引导
+        if self.use_tsca:
+            feat_c0, feat_c1 = self.tsca_module(feat_c0, feat_c1, hw_size=data['hw0_c'], mask0=mask_c0, mask1=mask_c1)
+            # 计算TSCA正则化损失（可选）
+            if hasattr(self.tsca_module, 'get_regularization_loss'):
+                tsca_loss = self.tsca_module.get_regularization_loss()
+                data['tsca_loss'] = tsca_loss
+        
         feat_c0, feat_c1 = self.loftr_coarse(feat_c0, feat_c1, mask_c0, mask_c1)
 
         # 3. Fine-level maching module as decoder

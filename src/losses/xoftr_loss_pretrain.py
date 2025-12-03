@@ -7,6 +7,11 @@ class XoFTRLossPretrain(nn.Module):
         super().__init__()
         self.config = config  # config under the global namespace
         self.W_f = config["xoftr"]['fine_window_size']
+        
+        # TSCA损失权重
+        self.use_tsca = config["xoftr"].get('tsca', {}).get('enabled', False)
+        if self.use_tsca:
+            self.tsca_loss_weight = config["xoftr"].get('tsca', {}).get('loss_weight', 0.1)
     
     def forward(self, data):
         """
@@ -33,5 +38,13 @@ class XoFTRLossPretrain(nn.Module):
         loss1 = (pred1 - target1)**2
         loss = loss0.mean() + loss1.mean()
         
-        loss_scalars.update({'loss': loss.clone().detach().cpu()})
-        data.update({"loss": loss, "loss_scalars": loss_scalars})
+        # TSCA正则化损失（如果启用）
+        if self.use_tsca and 'tsca_loss' in data:
+            tsca_loss = data['tsca_loss']
+            total_loss = loss + self.tsca_loss_weight * tsca_loss
+            loss_scalars.update({'tsca_loss': tsca_loss.clone().detach().cpu()})
+        else:
+            total_loss = loss
+        
+        loss_scalars.update({'loss': total_loss.clone().detach().cpu()})
+        data.update({"loss": total_loss, "loss_scalars": loss_scalars})

@@ -24,6 +24,16 @@ _CN.XOFTR.COARSE.NHEAD = 8
 _CN.XOFTR.COARSE.LAYER_NAMES = ['self', 'cross'] * 4
 _CN.XOFTR.COARSE.ATTENTION = 'linear'  # options: ['linear', 'full']
 
+# 2.1 TSCA (Texture-Semantic Feature Guided Cross-Attention) module config
+_CN.XOFTR.TSCA = CN()
+_CN.XOFTR.TSCA.ENABLED = True  # 是否启用TSCA模块
+_CN.XOFTR.TSCA.D_MODEL = 256
+_CN.XOFTR.TSCA.NHEAD = 8
+_CN.XOFTR.TSCA.TEX_CHANNELS = 256
+_CN.XOFTR.TSCA.SEM_CHANNELS = 256
+_CN.XOFTR.TSCA.GUIDANCE_WEIGHT = 0.5  # 引导权重的强度系数
+_CN.XOFTR.TSCA.LOSS_WEIGHT = 0.1  # TSCA正则化损失的权重
+
 # 3. Coarse-Matching config
 _CN.XOFTR.MATCH_COARSE = CN()
 _CN.XOFTR.MATCH_COARSE.INFERENCE = INFERENCE

@@ -3,7 +3,7 @@ import torch.nn as nn
 from einops.einops import rearrange
 from .backbone import ResNet_8_2
 from .utils.position_encoding import PositionEncodingSine
-from .xoftr_module import LocalFeatureTransformer, FineProcess, CoarseMatching, FineSubMatching
+from .xoftr_module import LocalFeatureTransformer, FineProcess, CoarseMatching, FineSubMatching, TSCAModule
 
 class XoFTR(nn.Module):
     def __init__(self, config):
@@ -15,6 +15,12 @@ class XoFTR(nn.Module):
         self.backbone = ResNet_8_2(config['resnet'])
         self.pos_encoding = PositionEncodingSine(config['coarse']['d_model'])
         self.loftr_coarse = LocalFeatureTransformer(config['coarse'])
+        
+        # 初始化TSCA模块（如果启用）
+        self.use_tsca = config.get('tsca', {}).get('enabled', False)
+        if self.use_tsca:
+            self.tsca_module = TSCAModule(config['tsca'])
+        
         self.coarse_matching = CoarseMatching(config['match_coarse'])
         self.fine_process = FineProcess(config)
         self.fine_matching= FineSubMatching(config)
@@ -72,7 +78,15 @@ class XoFTR(nn.Module):
         mask_c0 = mask_c1 = None  # mask is useful in training
         if 'mask0' in data:
             mask_c0, mask_c1 = data['mask0'].flatten(-2), data['mask1'].flatten(-2)
+        
+        # 应用标准LoFTR coarse模块
         feat_c0, feat_c1 = self.loftr_coarse(feat_c0, feat_c1, mask_c0, mask_c1)
+        
+        # # 应用TSCA模块进行纹理-语义引导的交叉注意力（如果启用）
+        # if self.use_tsca:
+        #     feat_c0, feat_c1 = self.tsca_module(feat_c0, feat_c1, 
+        #                                          hw_size=data['hw0_c'], 
+        #                                          mask0=mask_c0, mask1=mask_c1)
 
         # 3. match coarse-level
         self.coarse_matching(feat_c0, feat_c1, data, mask_c0=mask_c0, mask_c1=mask_c1)
@@ -91,4 +105,22 @@ class XoFTR(nn.Module):
         for k in list(state_dict.keys()):
             if k.startswith('matcher.'):
                 state_dict[k.replace('matcher.', '', 1)] = state_dict.pop(k)
+        
+        # 处理TSCA模块权重缺失的情况
+        # 如果当前模型启用了TSCA但预训练权重中没有TSCA权重，则保留TSCA模块的随机初始化
+        if self.use_tsca:
+            # 获取当前模型的所有TSCA权重键
+            model_state_dict = self.state_dict()
+            tsca_keys = [k for k in model_state_dict.keys() if k.startswith('tsca_module.')]
+            
+            # 检查预训练权重中是否包含TSCA权重
+            has_tsca_weights = any(k.startswith('tsca_module.') for k in state_dict.keys())
+            
+            if not has_tsca_weights:
+                print("[INFO] 预训练权重中未找到TSCA模块权重，将使用随机初始化的TSCA模块")
+                # 保留当前模型的TSCA权重（随机初始化）
+                for tsca_key in tsca_keys:
+                    if tsca_key not in state_dict:
+                        state_dict[tsca_key] = model_state_dict[tsca_key]
+        
         return super().load_state_dict(state_dict, *args, **kwargs)
