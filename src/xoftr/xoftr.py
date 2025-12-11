@@ -4,6 +4,7 @@ from einops.einops import rearrange
 from .backbone import ResNet_8_2
 from .utils.position_encoding import PositionEncodingSine
 from .xoftr_module import LocalFeatureTransformer, FineProcess, CoarseMatching, FineSubMatching
+from .semantic_enhance import SemanticEnhanceModule
 
 class XoFTR(nn.Module):
     def __init__(self, config):
@@ -18,6 +19,11 @@ class XoFTR(nn.Module):
         self.coarse_matching = CoarseMatching(config['match_coarse'])
         self.fine_process = FineProcess(config)
         self.fine_matching= FineSubMatching(config)
+        
+        # 语义分割增强模块
+        self.use_semantic_enhance = config.get('use_semantic_enhance', True)
+        if self.use_semantic_enhance:
+            self.semantic_enhance = SemanticEnhanceModule(config)
 
 
     def forward(self, data):
@@ -61,10 +67,22 @@ class XoFTR(nn.Module):
             'hw0_f': feat_f0.shape[2:], 'hw1_f': feat_f1.shape[2:]
         })
 
+        # 2. 语义分割增强（新增）
+        if self.use_semantic_enhance:
+            # 对粗粒度特征应用语义增强
+            feat_c0, feat_c1 = self.semantic_enhance(
+                image0, image1, feat_c0, feat_c1, level='coarse'
+            )
+            
+            # 对细粒度特征应用语义增强
+            feat_f0, feat_f1 = self.semantic_enhance(
+                image0, image1, feat_f0, feat_f1, level='fine'
+            )
+
         # save coarse features for fine matching
         feat_c0_pre, feat_c1_pre = feat_c0.clone(), feat_c1.clone()
 
-        # 2. coarse-level loftr module
+        # 3. coarse-level loftr module
         # add featmap with positional encoding, then flatten it to sequence [N, HW, C]
         feat_c0 = rearrange(self.pos_encoding(feat_c0), 'n c h w -> n (h w) c')
         feat_c1 = rearrange(self.pos_encoding(feat_c1), 'n c h w -> n (h w) c')
@@ -72,23 +90,24 @@ class XoFTR(nn.Module):
         mask_c0 = mask_c1 = None  # mask is useful in training
         if 'mask0' in data:
             mask_c0, mask_c1 = data['mask0'].flatten(-2), data['mask1'].flatten(-2)
+        
         feat_c0, feat_c1 = self.loftr_coarse(feat_c0, feat_c1, mask_c0, mask_c1)
 
-        # 3. match coarse-level
+        # 4. match coarse-level
         self.coarse_matching(feat_c0, feat_c1, data, mask_c0=mask_c0, mask_c1=mask_c1)
 
-        # 4. fine-level matching module       
+        # 5. fine-level matching module       
         feat_f0_unfold, feat_f1_unfold = self.fine_process(feat_f0, feat_f1,
                                                            feat_m0, feat_m1,
                                                            feat_c0, feat_c1,
                                                            feat_c0_pre, feat_c1_pre,
                                                            data) 
 
-        # 5. match fine-level and sub-pixel refinement
+        # 6. match fine-level and sub-pixel refinement
         self.fine_matching(feat_f0_unfold, feat_f1_unfold, data)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         for k in list(state_dict.keys()):
             if k.startswith('matcher.'):
                 state_dict[k.replace('matcher.', '', 1)] = state_dict.pop(k)
-        return super().load_state_dict(state_dict, *args, **kwargs)
+        return super().load_state_dict(state_dict, strict=False, *args, **kwargs)
