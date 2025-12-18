@@ -13,7 +13,7 @@ def correct_image_paths(scene_info):
     for ii in range(len(image_paths)):
         if image_paths[ii] is not None:
             folds = image_paths[ii].split("/")
-            path = osp.join("phoenix/S6/zl548/MegaDepth_v1/", folds[1], "dense0/imgs", folds[3] )
+            path = osp.join("phoenix/S6/zl548/MegaDepth_v1", folds[1], "dense0/imgs", folds[3])
             image_paths[ii] = path
     scene_info["image_paths"] = image_paths
     return scene_info
