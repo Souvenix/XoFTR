@@ -24,9 +24,9 @@ set MAIN_CFG_PATH=configs\xoftr\outdoor\visible_thermal.py
 set N_NODES=1
 set N_GPUS_PER_NODE=1
 set TORCH_NUM_WORKERS=1
-set BATCH_SIZE=2
+set BATCH_SIZE=1
 set PIN_MEMORY=true
-set CKPT_PATH=weights\weights_xoftr_640.ckpt
+set CKPT_PATH=pretrain_weights/epoch=8.ckpt
 
 :: 计算总批量大小并设置实验名称
 set /a TOTAL_BATCH_SIZE=%N_GPUS_PER_NODE% * %N_NODES% * %BATCH_SIZE%
@@ -44,7 +44,7 @@ python -u ./train.py ^
     --limit_val_batches=1. ^
     --num_sanity_val_steps=10 ^
     --benchmark=True ^
-    --max_epochs=30 ^
+    --max_epochs=1 ^
     --ckpt_path=%CKPT_PATH%
 
 ENDLOCAL

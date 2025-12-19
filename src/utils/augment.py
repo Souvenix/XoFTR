@@ -44,7 +44,7 @@ class RGBThermalAug(object):
     """
 
     def __init__(self):
-        self.blur =  A.Blur(p=0.7, blur_limit=(2, 4))
+        self.blur =  A.Blur(p=0.7, blur_limit=(1, 3))
         self.hsv = A.HueSaturationValue(p=0.9, val_shift_limit=(-30, +30), hue_shift_limit=(-90,+90), sat_shift_limit=(-30,+30))
 
         # Switch images to apply augmentation
