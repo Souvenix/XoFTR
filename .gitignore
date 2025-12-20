@@ -5,3 +5,4 @@ wandb
 .idea
 result*/
 weights
+pretrain_weights
