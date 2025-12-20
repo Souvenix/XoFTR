@@ -110,4 +110,4 @@ class XoFTR(nn.Module):
         for k in list(state_dict.keys()):
             if k.startswith('matcher.'):
                 state_dict[k.replace('matcher.', '', 1)] = state_dict.pop(k)
-        return super().load_state_dict(state_dict, strict=False, *args, **kwargs)
+        return super().load_state_dict(state_dict, *args, **kwargs)
