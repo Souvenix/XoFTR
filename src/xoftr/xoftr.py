@@ -1,3 +1,4 @@
+import time
 import torch
 import torch.nn as nn
 from einops.einops import rearrange
@@ -48,11 +49,15 @@ class XoFTR(nn.Module):
         image1_std = data['image1'].std(dim=[2,3], keepdim=True)
         image1 = (data['image1'] - image1_mean) / (image1_std + eps)
 
+        # start_time = time.time()
         # 提取线特征
         line_feat0 = self.line_feature_extractor(data['image0'])
         line_feat1 = self.line_feature_extractor(data['image1'])
 
-        if True:
+        # t1 = time.time()
+        # print(f"提取线特征耗时: {t1 - start_time:.4f} 秒")
+
+        if False:
             self.line_feature_extractor.visualize_and_save_lines(
                 data['image0'], 
                 save_dir='./output_lines/image0', 
@@ -73,9 +78,15 @@ class XoFTR(nn.Module):
             feat_c0, feat_m0, feat_f0 = self.backbone(image0)
             feat_c1, feat_m1, feat_f1 = self.backbone(image1)
 
+        # t2 = time.time()
+        # print(f"Local CNN耗时: {t2 - start_time:.4f} 秒")
+
         # 融合线特征和图像特征
         feat_f0 = self.line_feature_extractor.fuse_features(feat_f0, line_feat0)
         feat_f1 = self.line_feature_extractor.fuse_features(feat_f1, line_feat1)
+
+        # t3 = time.time()
+        # print(f"融合耗时: {t3 - t2:.4f} 秒")
 
         data.update({
             'hw0_c': feat_c0.shape[2:], 'hw1_c': feat_c1.shape[2:],
@@ -96,8 +107,14 @@ class XoFTR(nn.Module):
             mask_c0, mask_c1 = data['mask0'].flatten(-2), data['mask1'].flatten(-2)
         feat_c0, feat_c1 = self.loftr_coarse(feat_c0, feat_c1, mask_c0, mask_c1)
 
+        # t4 = time.time()
+        # print(f"coarse-level loftr耗时: {t4 - t3:.4f} 秒")
+
         # 3. match coarse-level
         self.coarse_matching(feat_c0, feat_c1, data, mask_c0=mask_c0, mask_c1=mask_c1)
+
+        # t5 = time.time()
+        # print(f"match coarse-level耗时: {t5 - t4:.4f} 秒")
 
         # 4. fine-level matching module       
         feat_f0_unfold, feat_f1_unfold = self.fine_process(feat_f0, feat_f1,
@@ -109,9 +126,12 @@ class XoFTR(nn.Module):
         # 5. match fine-level and sub-pixel refinement
         self.fine_matching(feat_f0_unfold, feat_f1_unfold, data)
 
+        # t6 = time.time()
+        # print(f"match fine-level耗时: {t6- t5:.4f} 秒")
+
     def load_state_dict(self, state_dict, *args, **kwargs):
         for k in list(state_dict.keys()):
             if k.startswith('matcher.'):
                 state_dict[k.replace('matcher.', '', 1)] = state_dict.pop(k)
         # 设置strict=False以忽略新增的线特征模块参数
-        return super().load_state_dict(state_dict, strict=False, *args, **kwargs)
+        return super().load_state_dict(state_dict, *args, **kwargs)
