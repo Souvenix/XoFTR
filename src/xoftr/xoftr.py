@@ -134,4 +134,4 @@ class XoFTR(nn.Module):
             if k.startswith('matcher.'):
                 state_dict[k.replace('matcher.', '', 1)] = state_dict.pop(k)
         # 设置strict=False以忽略新增的线特征模块参数
-        return super().load_state_dict(state_dict, *args, **kwargs)
+        return super().load_state_dict(state_dict, strict=False, *args, **kwargs)

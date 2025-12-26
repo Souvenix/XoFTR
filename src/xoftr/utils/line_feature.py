@@ -59,13 +59,20 @@ class LineFeatureExtractor(nn.Module):
             is_low_light = mean_intensity < self.light_threshold
             
             # 使用LSD算法检测线
-            lines = lsd(img_np)
+            lines = self.extract_lines_opencv(img_np)
             
             # 创建线特征图，应用质量筛选
             line_map = np.zeros_like(img_np, dtype=np.float32)
             if lines is not None and len(lines) > 0:
                 for line in lines:
-                    x1, y1, x2, y2 = map(int, line[:4])
+                    # 检查line的形状并正确提取坐标
+                    if len(line.shape) > 1:
+                        # 如果line是多维数组，取第一个维度
+                        coords = line.flatten()[:4]
+                    else:
+                        coords = line[:4]
+
+                    x1, y1, x2, y2 = map(int, coords)
                     
                     # 计算线的长度作为质量指标之一
                     line_length = np.sqrt((x2 - x1)**2 + (y2 - y1)** 2)
@@ -88,11 +95,12 @@ class LineFeatureExtractor(nn.Module):
                         # 绘制线特征
                         thickness = 1  # 保持固定线宽
                         cv2.line(line_map, (x1, y1), (x2, y2), intensity, thickness=thickness)
-            
             # 扩展维度并添加到列表
             line_map = np.expand_dims(line_map, axis=0)  # [1, H, W]
             line_maps.append(line_map)
-        
+
+            del img_np, line_map, lines
+
         # 将线特征图转换为tensor
         line_maps = np.stack(line_maps, axis=0)  # [N, 1, H, W]
         line_maps = torch.from_numpy(line_maps).to(image.device)
@@ -190,3 +198,9 @@ class LineFeatureExtractor(nn.Module):
             # 保存标注后的图像
             save_path = os.path.join(save_dir, f'{file_prefix}_{i}.png')
             cv2.imwrite(save_path, img_rgb)
+
+    def extract_lines_opencv(self, img_np):
+        # 使用OpenCV边缘检测和霍夫变换，内存效率更高
+        edges = cv2.Canny(img_np, 50, 150)
+        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=30, minLineLength=20, maxLineGap=5)
+        return lines
