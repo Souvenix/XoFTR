@@ -5,11 +5,11 @@ from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR, Exponential
 def build_optimizer(model, config):
     name = config.TRAINER.OPTIMIZER
     lr = config.TRAINER.TRUE_LR
-
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
     if name == "adam":
-        return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=config.TRAINER.ADAM_DECAY)
+        return torch.optim.Adam(trainable_params, lr=lr, weight_decay=config.TRAINER.ADAM_DECAY)
     elif name == "adamw":
-        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=config.TRAINER.ADAMW_DECAY)
+        return torch.optim.AdamW(trainable_params, lr=lr, weight_decay=config.TRAINER.ADAMW_DECAY)
     else:
         raise ValueError(f"TRAINER.OPTIMIZER = {name} is not a valid optimizer!")
 

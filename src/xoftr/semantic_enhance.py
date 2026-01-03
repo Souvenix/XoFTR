@@ -37,7 +37,7 @@ class SemanticEnhanceModule(nn.Module):
         
         # 获取配置参数，支持大小写不敏感的键名
         coarse_d_model = self._get_config_value(config, ['coarse', 'COARSE'], 'd_model', 256)
-        fine_feat_dim = self._get_config_value(config, ['resnet', 'RESNET'], 'block_dims', [128, 196, 256])[-1]
+        fine_feat_dim = self._get_config_value(config, ['resnet', 'RESNET'], 'block_dims', [128, 196, 256])[0]
         
         # 简单的语义特征提取器 - 使用轻量级卷积而不是DeepLabV3
         self.semantic_extractor = nn.Sequential(

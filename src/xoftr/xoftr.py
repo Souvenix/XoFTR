@@ -106,8 +106,23 @@ class XoFTR(nn.Module):
         # 6. match fine-level and sub-pixel refinement
         self.fine_matching(feat_f0_unfold, feat_f1_unfold, data)
 
+    def freeze_other_parameters(self):
+        """冻结除semantic_enhance外的所有参数"""
+        for name, param in self.named_parameters():
+            if 'semantic_enhance' not in name:
+                param.requires_grad = False
+            else:
+                param.requires_grad = True
+                print(f"Freezing parameter: {name}")
+
     def load_state_dict(self, state_dict, *args, **kwargs):
         for k in list(state_dict.keys()):
             if k.startswith('matcher.'):
                 state_dict[k.replace('matcher.', '', 1)] = state_dict.pop(k)
-        return super().load_state_dict(state_dict, *args, **kwargs)
+
+        # 加载状态字典（可能包含新的semantic_enhance参数）
+        result = super().load_state_dict(state_dict, strict=False, *args, **kwargs)
+
+        # 然后冻结非semantic_enhance参数
+        self.freeze_other_parameters()
+        return result
