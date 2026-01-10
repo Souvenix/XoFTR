@@ -54,6 +54,11 @@ class XoFTR(nn.Module):
         line_feat0 = self.line_feature_extractor(data['image0'])
         line_feat1 = self.line_feature_extractor(data['image1'])
 
+        data.update({
+            'line_tokens0': line_feat0,
+            'line_tokens1': line_feat1,
+        })
+
         # t1 = time.time()
         # print(f"提取线特征耗时: {t1 - start_time:.4f} 秒")
 
@@ -134,4 +139,14 @@ class XoFTR(nn.Module):
             if k.startswith('matcher.'):
                 state_dict[k.replace('matcher.', '', 1)] = state_dict.pop(k)
         # 设置strict=False以忽略新增的线特征模块参数
-        return super().load_state_dict(state_dict, strict=False, *args, **kwargs)
+        result = super().load_state_dict(state_dict, *args, **kwargs)
+
+        # 在加载状态后设置仅训练line相关参数
+        for name, param in self.named_parameters():
+            if 'line' not in name.lower():
+                param.requires_grad = False
+            else:
+                param.requires_grad = True
+                print("train parms: ", name)
+
+        return result
