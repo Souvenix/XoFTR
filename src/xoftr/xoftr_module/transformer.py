@@ -97,7 +97,12 @@ class LocalFeatureTransformer(nn.Module):
                 feat1 = layer(feat1, feat1, mask1, mask1)
             elif name == 'cross':
                 feat0 = layer(feat0, feat1, mask0, mask1, attn_bias=sem_bias)
-                feat1 = layer(feat1, feat0, mask1, mask0, attn_bias=sem_bias.transpose(1,2))
+                if sem_bias is not None:
+                    attn_bias = sem_bias.transpose(1, 2)
+                else:
+                    # 设置默认值或者跳过转换
+                    attn_bias = None  # 或者其他默认张量
+                feat1 = layer(feat1, feat0, mask1, mask0, attn_bias=attn_bias)
             else:
                 raise KeyError
 
