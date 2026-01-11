@@ -32,7 +32,7 @@ class LoFTREncoderLayer(nn.Module):
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
 
-    def forward(self, x, source, x_mask=None, source_mask=None):
+    def forward(self, x, source, x_mask=None, source_mask=None, attn_bias=None):
         """
         Args:
             x (torch.Tensor): [N, L, C]
@@ -47,7 +47,10 @@ class LoFTREncoderLayer(nn.Module):
         query = self.q_proj(query).view(bs, -1, self.nhead, self.dim)  # [N, L, (H, D)]
         key = self.k_proj(key).view(bs, -1, self.nhead, self.dim)  # [N, S, (H, D)]
         value = self.v_proj(value).view(bs, -1, self.nhead, self.dim)
-        message = self.attention(query, key, value, q_mask=x_mask, kv_mask=source_mask)  # [N, L, (H, D)]
+        if attn_bias is not None:
+            # attn_bias: [N, L, S] → [N, H, L, S]
+            attn_bias = attn_bias.unsqueeze(1).repeat(1, self.nhead, 1, 1)
+        message = self.attention(query, key, value, q_mask=x_mask, kv_mask=source_mask, attn_bias=attn_bias)  # [N, L, (H, D)]
         message = self.merge(message.view(bs, -1, self.nhead*self.dim))  # [N, L, C]
         message = self.norm1(message)
 
@@ -77,7 +80,7 @@ class LocalFeatureTransformer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, feat0, feat1, mask0=None, mask1=None):
+    def forward(self, feat0, feat1, mask0=None, mask1=None, sem_bias=None):
         """
         Args:
             feat0 (torch.Tensor): [N, L, C]
@@ -93,8 +96,8 @@ class LocalFeatureTransformer(nn.Module):
                 feat0 = layer(feat0, feat0, mask0, mask0)
                 feat1 = layer(feat1, feat1, mask1, mask1)
             elif name == 'cross':
-                feat0 = layer(feat0, feat1, mask0, mask1)
-                feat1 = layer(feat1, feat0, mask1, mask0)
+                feat0 = layer(feat0, feat1, mask0, mask1, attn_bias=sem_bias)
+                feat1 = layer(feat1, feat0, mask1, mask0, attn_bias=sem_bias.transpose(1,2))
             else:
                 raise KeyError
 

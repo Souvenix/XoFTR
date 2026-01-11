@@ -164,7 +164,38 @@ class XoFTRLoss(nn.Module):
         loss_sub *= self.loss_config['sub_weight'] 
         loss = loss + loss_sub 
         loss_scalars.update({"loss_sub":  loss_sub.clone().detach().cpu()})
-        
+
+        # 4. semantic alignment loss (coarse-level)
+        loss_sem = self.compute_semantic_alignment_loss(data)
+        loss_sem *= 0.1
+        loss = loss + loss_sem
+        loss_scalars.update({"loss_sem": loss_sem.clone().detach().cpu()})
 
         loss_scalars.update({'loss': loss.clone().detach().cpu()})
         data.update({"loss": loss, "loss_scalars": loss_scalars})
+
+    def compute_semantic_alignment_loss(self, data):
+        """
+        Semantic Alignment Loss (coarse-level, GT-based)
+        """
+        sem0 = data['sem0']  # [N, HW0, C]
+        sem1 = data['sem1']  # [N, HW1, C]
+        conf_gt = data['conf_matrix_gt']  # [N, HW0, HW1]
+
+        pos_mask = conf_gt == 1
+
+        # 关键修复点 👇
+        if not pos_mask.any():
+            # 返回一个“0 * 可导变量”，而不是纯 0
+            return sem0.sum() * 0.0
+
+        b_ids, i_ids, j_ids = torch.where(pos_mask)
+
+        s0 = sem0[b_ids, i_ids]
+        s1 = sem1[b_ids, j_ids]
+
+        s0 = torch.nn.functional.normalize(s0, dim=-1)
+        s1 = torch.nn.functional.normalize(s1, dim=-1)
+
+        loss = 1.0 - (s0 * s1).sum(dim=-1)
+        return loss.mean()

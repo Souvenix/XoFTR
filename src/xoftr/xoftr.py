@@ -4,7 +4,7 @@ from einops.einops import rearrange
 from .backbone import ResNet_8_2
 from .utils.position_encoding import PositionEncodingSine
 from .xoftr_module import LocalFeatureTransformer, FineProcess, CoarseMatching, FineSubMatching
-from .semantic_enhance import SemanticEnhanceModule
+from .semantic_encoder import SemanticEncoder, SemanticProjection,SemanticGuidanceModule
 
 class XoFTR(nn.Module):
     def __init__(self, config):
@@ -19,11 +19,10 @@ class XoFTR(nn.Module):
         self.coarse_matching = CoarseMatching(config['match_coarse'])
         self.fine_process = FineProcess(config)
         self.fine_matching= FineSubMatching(config)
-        
-        # 语义分割增强模块
-        self.use_semantic_enhance = config.get('use_semantic_enhance', True)
-        if self.use_semantic_enhance:
-            self.semantic_enhance = SemanticEnhanceModule(config)
+
+        self.semantic_encoder = SemanticEncoder()
+        self.semantic_proj = SemanticProjection(256, 128)
+        self.semantic_sgm = SemanticGuidanceModule()
 
 
     def forward(self, data):
@@ -67,17 +66,21 @@ class XoFTR(nn.Module):
             'hw0_f': feat_f0.shape[2:], 'hw1_f': feat_f1.shape[2:]
         })
 
-        # 2. 语义分割增强（新增）
-        if self.use_semantic_enhance:
-            # 对粗粒度特征应用语义增强
-            feat_c0, feat_c1 = self.semantic_enhance(
-                image0, image1, feat_c0, feat_c1, level='coarse'
-            )
-            
-            # 对细粒度特征应用语义增强
-            feat_f0, feat_f1 = self.semantic_enhance(
-                image0, image1, feat_f0, feat_f1, level='fine'
-            )
+        # ========== Semantic branch ==========
+        sem0 = self.semantic_encoder(image0)  # [N,Cs,Hc,Wc]
+        sem1 = self.semantic_encoder(image1)
+
+        sem0 = rearrange(sem0, 'n c h w -> n (h w) c')
+        sem1 = rearrange(sem1, 'n c h w -> n (h w) c')
+
+        sem0 = self.semantic_proj(sem0)
+        sem1 = self.semantic_proj(sem1)
+
+        B_sem = self.semantic_sgm(sem0, sem1)
+        data.update({
+            'sem0': sem0,  # [N, HW0, C]
+            'sem1': sem1,  # [N, HW1, C]
+        })
 
         # save coarse features for fine matching
         feat_c0_pre, feat_c1_pre = feat_c0.clone(), feat_c1.clone()
@@ -91,7 +94,7 @@ class XoFTR(nn.Module):
         if 'mask0' in data:
             mask_c0, mask_c1 = data['mask0'].flatten(-2), data['mask1'].flatten(-2)
         
-        feat_c0, feat_c1 = self.loftr_coarse(feat_c0, feat_c1, mask_c0, mask_c1)
+        feat_c0, feat_c1 = self.loftr_coarse(feat_c0, feat_c1, mask_c0, mask_c1, sem_bias=B_sem)
 
         # 4. match coarse-level
         self.coarse_matching(feat_c0, feat_c1, data, mask_c0=mask_c0, mask_c1=mask_c1)
@@ -109,7 +112,7 @@ class XoFTR(nn.Module):
     def freeze_other_parameters(self):
         """冻结除semantic_enhance外的所有参数"""
         for name, param in self.named_parameters():
-            if 'semantic_enhance' not in name:
+            if 'semantic' not in name:
                 param.requires_grad = False
             else:
                 param.requires_grad = True
@@ -121,7 +124,7 @@ class XoFTR(nn.Module):
                 state_dict[k.replace('matcher.', '', 1)] = state_dict.pop(k)
 
         # 加载状态字典（可能包含新的semantic_enhance参数）
-        result = super().load_state_dict(state_dict, strict=False, *args, **kwargs)
+        result = super().load_state_dict(state_dict, *args, **kwargs)
 
         # 然后冻结非semantic_enhance参数
         self.freeze_other_parameters()
