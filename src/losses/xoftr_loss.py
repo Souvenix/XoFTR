@@ -165,7 +165,15 @@ class XoFTRLoss(nn.Module):
         loss = loss + loss_sub 
         loss_scalars.update({"loss_sub":  loss_sub.clone().detach().cpu()})
 
-        # 4. semantic alignment loss (coarse-level)
+        # 4. point-line structural consistency loss
+        pl_weight = 0.1
+        if pl_weight > 0:
+            loss_pl = self.compute_point_line_loss(data)
+            loss_pl *= pl_weight
+            loss = loss + loss_pl
+            loss_scalars.update({"loss_pl": loss_pl.clone().detach().cpu()})
+
+        # 5. semantic alignment loss (coarse-level)
         loss_sem = self.compute_semantic_alignment_loss(data)
         loss_sem *= 0.1
         loss = loss + loss_sem
@@ -199,3 +207,51 @@ class XoFTRLoss(nn.Module):
 
         loss = 1.0 - (s0 * s1).sum(dim=-1)
         return loss.mean()
+    def compute_point_line_loss(self, data):
+        """
+        Point–Line structural consistency loss
+        """
+        if ('line_tokens0' not in data) or ('mkpts0_f_train' not in data):
+            return torch.zeros(1, device=data['conf_matrix_0_to_1'].device)[0]
+
+        pts0 = data['mkpts0_f_train']  # [M, 2]
+        bids = data['m_bids']  # [M]
+        line_tokens0 = data['line_tokens0']  # List[Tensor[L,4]]
+
+        if pts0.numel() == 0:
+            return torch.zeros(1, device=pts0.device)[0]
+
+        losses = []
+
+        for b in bids.unique():
+            mask = (bids == b)
+            if mask.sum() == 0:
+                continue
+
+            pts = pts0[mask]  # [Mb, 2]
+            lines = line_tokens0[b.item()]  # [Lb, 4]
+
+            if lines.numel() == 0:
+                continue
+
+            # lines: [L, 4] → (x1,y1,x2,y2)
+            x1, y1, x2, y2 = lines[:, 0], lines[:, 1], lines[:, 2], lines[:, 3]
+            A = torch.stack([y2 - y1, x1 - x2], dim=-1)  # [L,2]
+            B = x2 * y1 - y2 * x1  # [L]
+
+            # point-line distance
+            num = torch.abs((pts[:, None, :] * A[None]).sum(-1) + B[None])
+            den = torch.norm(A, dim=-1)[None] + 1e-6
+            dist = num / den  # [Mb, Lb]
+
+            # soft nearest line
+            min_dist = torch.min(dist, dim=1)[0]  # [Mb]
+            losses.append(min_dist.mean())
+
+        if len(losses) == 0:
+            return torch.zeros(1, device=pts0.device)[0]
+
+        return torch.stack(losses).mean()
+
+
+

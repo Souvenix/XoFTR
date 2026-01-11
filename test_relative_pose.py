@@ -251,7 +251,7 @@ def test_relative_pose_vistir(
 
     # Load method
     matcher = eval(f"load_{method}")(args)
-    print("matcher:", matcher)
+    # print("matcher:", matcher)
     
     thresholds=[5, 10, 20]
     # Eval

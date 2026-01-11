@@ -3,6 +3,8 @@ assets
 __pycache__
 wandb
 .idea
+output*/
 result*/
-weights
-pretrain_weights
+weights/
+__pycache__/
+*.pyc

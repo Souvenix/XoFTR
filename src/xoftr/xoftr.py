@@ -4,6 +4,7 @@ from einops.einops import rearrange
 from .backbone import ResNet_8_2
 from .utils.position_encoding import PositionEncodingSine
 from .xoftr_module import LocalFeatureTransformer, FineProcess, CoarseMatching, FineSubMatching
+from .utils.line_feature import LineFeatureExtractor  # 导入线特征提取器
 from .semantic_encoder import SemanticEncoder, SemanticProjection,SemanticGuidanceModule
 
 class XoFTR(nn.Module):
@@ -18,7 +19,8 @@ class XoFTR(nn.Module):
         self.loftr_coarse = LocalFeatureTransformer(config['coarse'])
         self.coarse_matching = CoarseMatching(config['match_coarse'])
         self.fine_process = FineProcess(config)
-        self.fine_matching= FineSubMatching(config)
+        self.fine_matching = FineSubMatching(config)
+        self.line_feature_extractor = LineFeatureExtractor(config)  # 添加线特征提取器
 
         self.semantic_encoder = SemanticEncoder()
         self.semantic_proj = SemanticProjection(256, 128)
@@ -51,6 +53,31 @@ class XoFTR(nn.Module):
         image1_std = data['image1'].std(dim=[2,3], keepdim=True)
         image1 = (data['image1'] - image1_mean) / (image1_std + eps)
 
+        # start_time = time.time()
+        # 提取线特征
+        line_feat0 = self.line_feature_extractor(data['image0'])
+        line_feat1 = self.line_feature_extractor(data['image1'])
+
+        data.update({
+            'line_tokens0': line_feat0,
+            'line_tokens1': line_feat1,
+        })
+
+        # t1 = time.time()
+        # print(f"提取线特征耗时: {t1 - start_time:.4f} 秒")
+
+        if False:
+            self.line_feature_extractor.visualize_and_save_lines(
+                data['image0'],
+                save_dir='./output_lines/image0',
+                file_prefix='image0_lines'
+            )
+            self.line_feature_extractor.visualize_and_save_lines(
+                data['image1'],
+                save_dir='./output_lines/image1',
+                file_prefix='image1_lines'
+            )
+
         if data['hw0_i'] == data['hw1_i']:  # faster & better BN convergence
             feats_c, feats_m, feats_f = self.backbone(torch.cat([image0, image1], dim=0))
             (feat_c0, feat_c1) = feats_c.split(data['bs'])
@@ -59,6 +86,16 @@ class XoFTR(nn.Module):
         else:  # handle different input shapes
             feat_c0, feat_m0, feat_f0 = self.backbone(image0)
             feat_c1, feat_m1, feat_f1 = self.backbone(image1)
+
+        # t2 = time.time()
+        # print(f"Local CNN耗时: {t2 - start_time:.4f} 秒")
+
+        # 融合线特征和图像特征
+        feat_f0 = self.line_feature_extractor.fuse_features(feat_f0, line_feat0)
+        feat_f1 = self.line_feature_extractor.fuse_features(feat_f1, line_feat1)
+
+        # t3 = time.time()
+        # print(f"融合耗时: {t3 - t2:.4f} 秒")
 
         data.update({
             'hw0_c': feat_c0.shape[2:], 'hw1_c': feat_c1.shape[2:],
@@ -85,7 +122,7 @@ class XoFTR(nn.Module):
         # save coarse features for fine matching
         feat_c0_pre, feat_c1_pre = feat_c0.clone(), feat_c1.clone()
 
-        # 3. coarse-level loftr module
+        # 2. coarse-level loftr module
         # add featmap with positional encoding, then flatten it to sequence [N, HW, C]
         feat_c0 = rearrange(self.pos_encoding(feat_c0), 'n c h w -> n (h w) c')
         feat_c1 = rearrange(self.pos_encoding(feat_c1), 'n c h w -> n (h w) c')
@@ -93,39 +130,33 @@ class XoFTR(nn.Module):
         mask_c0 = mask_c1 = None  # mask is useful in training
         if 'mask0' in data:
             mask_c0, mask_c1 = data['mask0'].flatten(-2), data['mask1'].flatten(-2)
-        
-        feat_c0, feat_c1 = self.loftr_coarse(feat_c0, feat_c1, mask_c0, mask_c1, sem_bias=B_sem)
+        feat_c0, feat_c1 = self.loftr_coarse(feat_c0, feat_c1, mask_c0, mask_c1)
 
-        # 4. match coarse-level
+        # 3. match coarse-level
         self.coarse_matching(feat_c0, feat_c1, data, mask_c0=mask_c0, mask_c1=mask_c1)
 
-        # 5. fine-level matching module       
+        # 4. fine-level matching module       
         feat_f0_unfold, feat_f1_unfold = self.fine_process(feat_f0, feat_f1,
                                                            feat_m0, feat_m1,
                                                            feat_c0, feat_c1,
                                                            feat_c0_pre, feat_c1_pre,
-                                                           data) 
-
-        # 6. match fine-level and sub-pixel refinement
+                                                           data)
+        # 5. match fine-level and sub-pixel refinement
         self.fine_matching(feat_f0_unfold, feat_f1_unfold, data)
-
-    def freeze_other_parameters(self):
-        """冻结除semantic_enhance外的所有参数"""
-        for name, param in self.named_parameters():
-            if 'semantic' not in name:
-                param.requires_grad = False
-            else:
-                param.requires_grad = True
-                print(f"Freezing parameter: {name}")
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         for k in list(state_dict.keys()):
             if k.startswith('matcher.'):
                 state_dict[k.replace('matcher.', '', 1)] = state_dict.pop(k)
-
-        # 加载状态字典（可能包含新的semantic_enhance参数）
+        # 设置strict=False以忽略新增的线特征模块参数
         result = super().load_state_dict(state_dict, *args, **kwargs)
 
-        # 然后冻结非semantic_enhance参数
-        self.freeze_other_parameters()
+        # 在加载状态后设置仅训练line相关参数
+        for name, param in self.named_parameters():
+            if 'line' not in name.lower() and 'semantic' not in name:
+                param.requires_grad = False
+            else:
+                param.requires_grad = True
+                print("train parms: ", name)
+
         return result
