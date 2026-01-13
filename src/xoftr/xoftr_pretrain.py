@@ -4,7 +4,7 @@ from einops.einops import rearrange
 from .backbone import ResNet_8_2
 from .utils.position_encoding import PositionEncodingSine
 from .xoftr_module import LocalFeatureTransformer, FineProcess
-
+from .modal import ModalityGuidedAlignment, ModalityEncoder, CrossModalityGate
 
 class XoFTR_Pretrain(nn.Module):
     def __init__(self, config):
@@ -22,6 +22,14 @@ class XoFTR_Pretrain(nn.Module):
         self.mask_token_m = nn.Parameter(torch.zeros(1, config['resnet']["block_dims"][1], 1, 1))
         self.mask_token_c = nn.Parameter(torch.zeros(1, config['resnet']["block_dims"][2], 1, 1))
         self.out_proj = nn.Linear(config['resnet']["block_dims"][0], 4)
+
+        self.modality_align = ModalityGuidedAlignment(
+            dims={
+                'c': config['resnet']['block_dims'][2],
+                'm': config['resnet']['block_dims'][1],
+                'f': config['resnet']['block_dims'][0],
+            }
+        )
     
         torch.nn.init.normal_(self.mask_token_f, std=.02)
         torch.nn.init.normal_(self.mask_token_m, std=.02)
@@ -148,6 +156,17 @@ class XoFTR_Pretrain(nn.Module):
             'hw0_m': feat_m0.shape[2:], 'hw1_m': feat_m1.shape[2:],
             'hw0_f': feat_f0.shape[2:], 'hw1_f': feat_f1.shape[2:]
         })
+
+        (feat_c0, feat_c1,
+         feat_m0, feat_m1,
+         feat_f0, feat_f1,
+         modality_feats) = self.modality_align(
+            feat_c0, feat_c1,
+            feat_m0, feat_m1,
+            feat_f0, feat_f1
+        )
+
+        data['modality_feats'] = modality_feats
 
         # save coarse features for fine matching module
         feat_c0_pre, feat_c1_pre = feat_c0.clone(), feat_c1.clone()

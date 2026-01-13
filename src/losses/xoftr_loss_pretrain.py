@@ -31,7 +31,20 @@ class XoFTRLossPretrain(nn.Module):
         
         loss0 = (pred0 - target0)**2
         loss1 = (pred1 - target1)**2
-        loss = loss0.mean() + loss1.mean()
+        l_mod = self.modality_alignment_loss(data['modality_feats'])
+
+        loss = loss0.mean() + loss1.mean() + 0.05 * l_mod
         
         loss_scalars.update({'loss': loss.clone().detach().cpu()})
         data.update({"loss": loss, "loss_scalars": loss_scalars})
+
+    def modality_alignment_loss(self, modality_feats, mask=None):
+        """
+        modality_feats: dict {'c':(m0,m1), 'm':..., 'f':...}
+        """
+        loss = 0.0
+        for level in modality_feats:
+            m0, m1 = modality_feats[level]
+            loss += F.mse_loss(m0, m1)
+
+        return loss / len(modality_feats)
